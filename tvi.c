@@ -100,11 +100,12 @@ enum editorHighlight {
   HL_MATCH
 };
 
-#define HL_HIGHLIGHT_NUMBERS (1 << 0)
-#define HL_HIGHLIGHT_STRINGS (1 << 1)
-#define HL_HIGHLIGHT_COMMENT (1 << 2)
-#define HL_HIGHLIGHT_KEYWORDS (1 << 3)
-#define HL_HIGHLIGHT_OPERATORS (1 << 4)
+#define HL_HIGHLIGHT_DONT (1 << 0)
+#define HL_HIGHLIGHT_NUMBERS (1 << 1)
+#define HL_HIGHLIGHT_STRINGS (1 << 2)
+#define HL_HIGHLIGHT_COMMENT (1 << 3)
+#define HL_HIGHLIGHT_KEYWORDS (1 << 4)
+#define HL_HIGHLIGHT_OPERATORS (1 << 5)
 
 /*** data ***/
 
@@ -134,6 +135,7 @@ struct editorConfig {
   int rx;
   int rowoff;
   int coloff;
+  int highlighting;
   int screenrows;
   int screencols;
   int numrows;
@@ -154,18 +156,19 @@ char *C_HL_extensions[] = {".c", ".h", ".cpp", ".C", ".H", ".CPP", NULL};
 char *Pascal_HL_extensions[] = {".pas", ".pp", ".PAS", ".PP", NULL};
 char *Python_HL_extensions[] = {".py", NULL};
 char *Markdown_HL_extensions[] = {".md", ".MD", NULL};
+char *Text_HL_extensions[] = {".txt", ".TXT", NULL};
 
 /* keywords support two tiers of keywords, for C it's broken down by keywords
 ** and common types. types as tier 2 are denoted by a sufix pipe symbol. */
 
-char *C_HL_keywords[] = {"switch",    "if",      "while",   "for",    "break",
-                         "continue",  "return",  "else",    "struct", "union",
-                         "typedef",   "static",  "enum",    "class",  "case",
+char *C_HL_kw[] = {"switch",    "if",      "while",   "for",    "break",
+                   "continue",  "return",  "else",    "struct", "union",
+                   "typedef",   "static",  "enum",    "class",  "case",
 
-                         "int|",      "long|",   "double|", "float|", "char|",
-                         "unsigned|", "signed|", "void|",   NULL};
+                   "int|",      "long|",   "double|", "float|", "char|",
+                   "unsigned|", "signed|", "void|",   NULL};
 
-char *Pascal_HL_keywords[] = {
+char *Pascal_HL_kw[] = {
     "begin",       "end",        "if",        "then",           "else",
     "goto",        "while",      "do",        "until",          "program",
     "type",        "const",      "var",       "procedure",      "function",
@@ -177,60 +180,67 @@ char *Pascal_HL_keywords[] = {
     "record|",     "set|",       "string|",   "type|",          "integer|",
     "float|",      "double|",    "real|",     "char|",          NULL};
 
-char *Python_HL_keywords[] = {"and",
-                              "as",
-                              "assert",
-                              "break",
-                              "class",
-                              "continue",
-                              "def",
-                              "del",
-                              "elif",
-                              "else",
-                              "except",
-                              "False",
-                              "finally",
-                              "for",
-                              "from",
-                              "global",
-                              "if",
-                              "import",
-                              "in",
-                              "is",
-                              "lambda",
-                              "None",
-                              "nonlocal",
-                              "not"
-                              "or",
-                              "pass",
-                              "raise",
-                              "return",
-                              "True",
-                              "try",
-                              "while",
-                              "with",
-                              "yield",
+char *Python_HL_kw[] = {"and",
+                        "as",
+                        "assert",
+                        "break",
+                        "class",
+                        "continue",
+                        "def",
+                        "del",
+                        "elif",
+                        "else",
+                        "except",
+                        "False",
+                        "finally",
+                        "for",
+                        "from",
+                        "global",
+                        "if",
+                        "import",
+                        "in",
+                        "is",
+                        "lambda",
+                        "None",
+                        "nonlocal",
+                        "not"
+                        "or",
+                        "pass",
+                        "raise",
+                        "return",
+                        "True",
+                        "try",
+                        "while",
+                        "with",
+                        "yield",
 
-                              "int|",
-                              "float|",
-                              "complex|",
-                              "list|",
-                              "tuple|",
-                              "range|",
-                              "str|",
-                              NULL};
+                        "int|",
+                        "float|",
+                        "complex|",
+                        "list|",
+                        "tuple|",
+                        "range|",
+                        "str|",
+                        NULL};
+
+char *Markdown_HL_kw[] = {NULL};
+
+char *Text_HL_kw[] = {NULL};
 
 struct editorSyntax HLDB[] = {
-    {"c", C_HL_extensions, C_HL_keywords, 1, "//", "/*", "*/",
+    {"C", C_HL_extensions, C_HL_kw, 1, "//", "/*", "*/",
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
          HL_HIGHLIGHT_KEYWORDS},
-    {"pascal", Pascal_HL_extensions, Pascal_HL_keywords, 0, "//", "{", "}",
+    {"Pascal", Pascal_HL_extensions, Pascal_HL_kw, 0, "//", "{", "}",
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
          HL_HIGHLIGHT_KEYWORDS},
-    {"python", Python_HL_extensions, Python_HL_keywords, 1, "#", NULL, NULL,
+    {"Python", Python_HL_extensions, Python_HL_kw, 1, "#", NULL, NULL,
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
          HL_HIGHLIGHT_KEYWORDS},
-};
+    {"Markdown", Markdown_HL_extensions, Markdown_HL_kw, 0, NULL, NULL, NULL,
+     0},
+    {"Text", Text_HL_extensions, Text_HL_kw, 0, NULL, NULL, NULL,
+     HL_HIGHLIGHT_NUMBERS}};
 
 #define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
 
@@ -517,6 +527,8 @@ void editorUpdateSyntax(erow *row) {
 }
 
 int editorSyntaxToColor(int hl) {
+  if (!E.highlighting)
+    return 37;
   switch (hl) {
   case HL_COMMENT:
     return 36;
@@ -1190,6 +1202,10 @@ void editorProcessKeypress() {
     editorFind();
     break;
 
+  case CTRL_KEY('t'):
+    E.highlighting = !E.highlighting;
+    break;
+
   case BACKSPACE:
   case CTRL_KEY('h'):
   case DEL_KEY:
@@ -1245,6 +1261,7 @@ void initEditor() {
   E.statusmsg[0] = '\0';
   E.statusmsg_time = 0;
   E.syntax = NULL;
+  E.highlighting = 1;
 
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die("initEditor-getWindowSize");
