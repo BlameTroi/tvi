@@ -1,23 +1,41 @@
 // tvi.c troi's smallish vimish editor
 //
-// started from kilo.c as from 
+// started from kilo.c as from
 // https://viewsourcecode.org/snaptoken/kilo/
 //
 // Troy Brumley, October 2020.
 //
+// *** TODO: must add more formal attribution to snaptoken and
+// ***       antirez.
+//
 // Ideas in no particular order.
 //
 // Code cleanup and formatting more to my preferences
-// 
+//
 // Along the way learn why the author made some choices, were they just
 // illustrative (eg, sometimes unsigned int is used and I don't see
 // why)
 //
-// Add more filetypes
+// DONE: Add more filetypes and highlighting
+//       pascal and python
+//
+// Sort keyword highlight tables at initialization for a speedier
+// highlighter, not that it seems to matter.
+// I've thought about moving the tier indicator character from the
+// back to front of the keywords, but I am not sure that will work
+// well.
+//
+// Add third tier of highlighting to support operators
+// so first tier is reserved or base language keywords,
+// second tier is common types and constants, and
+// third tier is operators and special characters
 //
 // Display line numbers
 //
 // Minimal auto indent
+//
+// Replace in addition to search
+// (regex? I think not)
 //
 // Copy and Paste
 //
@@ -51,9 +69,9 @@
 
 /*** defines ***/
 
-#define KILO_VERSION "0.0.1"
-#define KILO_TAB_STOP 8
-#define KILO_QUIT_TIMES 3
+#define TVI_VERSION "0.0.1"
+#define TVI_TAB_STOP 8
+#define TVI_QUIT_TIMES 3
 
 #define CTRL_KEY(k) ((k)&0x1f)
 
@@ -78,6 +96,7 @@ enum editorHighlight {
   HL_KEYWORD2,
   HL_STRING,
   HL_NUMBER,
+  HL_OPERATOR,
   HL_MATCH
 };
 
@@ -85,6 +104,7 @@ enum editorHighlight {
 #define HL_HIGHLIGHT_STRINGS (1 << 1)
 #define HL_HIGHLIGHT_COMMENT (1 << 2)
 #define HL_HIGHLIGHT_KEYWORDS (1 << 3)
+#define HL_HIGHLIGHT_OPERATORS (1 << 4)
 
 /*** data ***/
 
@@ -92,6 +112,7 @@ struct editorSyntax {
   char *filetype;
   char **filematch;
   char **keywords;
+  int keywords_case_sensitive;
   char *singleline_comment_start;
   char *multiline_comment_start;
   char *multiline_comment_end;
@@ -129,10 +150,14 @@ struct editorConfig E;
 
 /*** filetypes ***/
 
-char *C_HL_extensions[] = {".c", ".h", ".cpp", NULL};
+char *C_HL_extensions[] = {".c", ".h", ".cpp", ".C", ".H", ".CPP", NULL};
+char *Pascal_HL_extensions[] = {".pas", ".pp", ".PAS", ".PP", NULL};
+char *Python_HL_extensions[] = {".py", NULL};
+char *Markdown_HL_extensions[] = {".md", ".MD", NULL};
 
 /* keywords support two tiers of keywords, for C it's broken down by keywords
 ** and common types. types as tier 2 are denoted by a sufix pipe symbol. */
+
 char *C_HL_keywords[] = {"switch",    "if",      "while",   "for",    "break",
                          "continue",  "return",  "else",    "struct", "union",
                          "typedef",   "static",  "enum",    "class",  "case",
@@ -140,8 +165,69 @@ char *C_HL_keywords[] = {"switch",    "if",      "while",   "for",    "break",
                          "int|",      "long|",   "double|", "float|", "char|",
                          "unsigned|", "signed|", "void|",   NULL};
 
+char *Pascal_HL_keywords[] = {
+    "begin",       "end",        "if",        "then",           "else",
+    "goto",        "while",      "do",        "until",          "program",
+    "type",        "const",      "var",       "procedure",      "function",
+    "repeat",      "for",        "to",        "downto",         "unit",
+    "uses",        "with",       "interface", "implementation", "in",
+    "constructor", "destructor", "nil",       "exit",
+
+    "array|",      "file|",      "object|",   "packed|",        "label|",
+    "record|",     "set|",       "string|",   "type|",          "integer|",
+    "float|",      "double|",    "real|",     "char|",          NULL};
+
+char *Python_HL_keywords[] = {"and",
+                              "as",
+                              "assert",
+                              "break",
+                              "class",
+                              "continue",
+                              "def",
+                              "del",
+                              "elif",
+                              "else",
+                              "except",
+                              "False",
+                              "finally",
+                              "for",
+                              "from",
+                              "global",
+                              "if",
+                              "import",
+                              "in",
+                              "is",
+                              "lambda",
+                              "None",
+                              "nonlocal",
+                              "not"
+                              "or",
+                              "pass",
+                              "raise",
+                              "return",
+                              "True",
+                              "try",
+                              "while",
+                              "with",
+                              "yield",
+
+                              "int|",
+                              "float|",
+                              "complex|",
+                              "list|",
+                              "tuple|",
+                              "range|",
+                              "str|",
+                              NULL};
+
 struct editorSyntax HLDB[] = {
-    {"c", C_HL_extensions, C_HL_keywords, "//", "/*", "*/",
+    {"c", C_HL_extensions, C_HL_keywords, 1, "//", "/*", "*/",
+     HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
+         HL_HIGHLIGHT_KEYWORDS},
+    {"pascal", Pascal_HL_extensions, Pascal_HL_keywords, 0, "//", "{", "}",
+     HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
+         HL_HIGHLIGHT_KEYWORDS},
+    {"python", Python_HL_extensions, Python_HL_keywords, 1, "#", NULL, NULL,
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
          HL_HIGHLIGHT_KEYWORDS},
 };
@@ -157,6 +243,11 @@ char *editorPrompt(char *prompt, void (*callback)(char *, int));
 /*** error reporting ***/
 
 void die(const char *s) {
+  /* NOTE: that trying to open a non-existant file when first
+     invoking tvi throws an error. The following prints are
+     done before raw mode is disabled, but I don't feel that
+     I can safely disable here because it my break errno.
+     TODO: investigate preserving perror output or errno. */
   write(STDOUT_FILENO, "\x1b[2J", 4); // erase display
   write(STDOUT_FILENO, "\x1b[H", 3);  // home cursor
   perror(s);
@@ -323,31 +414,33 @@ void editorUpdateSyntax(erow *row) {
     char c = row->render[i];
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
 
-    if (scs_len && !in_string && !in_comment) {
-      if (!strncmp(&row->render[i], scs, scs_len)) {
-        memset(&row->hl[i], HL_COMMENT, row->rsize - i);
-        break;
+    if (E.syntax->flags & HL_HIGHLIGHT_COMMENT) {
+      if (scs_len && !in_string && !in_comment) {
+        if (!strncmp(&row->render[i], scs, scs_len)) {
+          memset(&row->hl[i], HL_COMMENT, row->rsize - i);
+          break;
+        }
       }
-    }
 
-    if (mcs_len && mce_len && !in_string) {
-      if (in_comment) {
-        row->hl[i] = HL_MLCOMMENT;
-        if (!strncmp(&row->render[i], mce, mce_len)) {
-          memset(&row->hl[i], HL_MLCOMMENT, mce_len);
-          i += mce_len;
-          in_comment = 0;
-          prev_sep = 1;
-          continue;
-        } else {
-          i++;
+      if (mcs_len && mce_len && !in_string) {
+        if (in_comment) {
+          row->hl[i] = HL_MLCOMMENT;
+          if (!strncmp(&row->render[i], mce, mce_len)) {
+            memset(&row->hl[i], HL_MLCOMMENT, mce_len);
+            i += mce_len;
+            in_comment = 0;
+            prev_sep = 1;
+            continue;
+          } else {
+            i++;
+            continue;
+          }
+        } else if (!strncmp(&row->render[i], mcs, mcs_len)) {
+          memset(&row->hl[i], HL_MLCOMMENT, mcs_len);
+          i += mcs_len;
+          in_comment = 1;
           continue;
         }
-      } else if (!strncmp(&row->render[i], mcs, mcs_len)) {
-        memset(&row->hl[i], HL_MLCOMMENT, mcs_len);
-        i += mcs_len;
-        in_comment = 1;
-        continue;
       }
     }
 
@@ -392,7 +485,9 @@ void editorUpdateSyntax(erow *row) {
         if (kw2)
           klen--;
 
-        if (!strncmp(&row->render[i], keywords[j], klen) &&
+        if (!(E.syntax->keywords_case_sensitive
+                  ? strncmp(&row->render[i], keywords[j], klen)
+                  : strncasecmp(&row->render[i], keywords[j], klen)) &&
             is_separator(row->render[i + klen])) {
           memset(&row->hl[i], kw2 ? HL_KEYWORD2 : HL_KEYWORD1, klen);
           i += klen;
@@ -403,6 +498,12 @@ void editorUpdateSyntax(erow *row) {
         prev_sep = 0;
         continue;
       }
+    }
+
+    if (prev_sep && E.syntax->flags & HL_HIGHLIGHT_OPERATORS) {
+      /* TODO: need to implement, note that by relying on
+           prev_sep we're not going to get operators without
+           whitespace around them. */
     }
 
     prev_sep = is_separator(c);
@@ -469,7 +570,7 @@ int editorRowCxToRx(erow *row, int cx) {
   int j;
   for (j = 0; j < cx; j++) {
     if (row->chars[j] == '\t')
-      rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
+      rx += (TVI_TAB_STOP - 1) - (rx % TVI_TAB_STOP);
     rx++;
   }
   return rx;
@@ -480,7 +581,7 @@ int editorRowRxToCx(erow *row, int rx) {
   int cx;
   for (cx = 0; cx < row->size; cx++) {
     if (row->chars[cx] == '\t')
-      cur_rx += (KILO_TAB_STOP - 1) - (cur_rx % KILO_TAB_STOP);
+      cur_rx += (TVI_TAB_STOP - 1) - (cur_rx % TVI_TAB_STOP);
     cur_rx++;
     if (cur_rx > rx)
       return cx;
@@ -496,13 +597,13 @@ void editorUpdateRow(erow *row) {
       tabs++;
 
   free(row->render);
-  row->render = malloc(row->size + tabs * (KILO_TAB_STOP - 1) + 1);
+  row->render = malloc(row->size + tabs * (TVI_TAB_STOP - 1) + 1);
 
   int idx = 0;
   for (j = 0; j < row->size; j++) {
     if (row->chars[j] == '\t') {
       row->render[idx++] = ' ';
-      while (idx % KILO_TAB_STOP != 0)
+      while (idx % TVI_TAB_STOP != 0)
         row->render[idx++] = ' ';
     } else {
       row->render[idx++] = row->chars[j];
@@ -649,7 +750,9 @@ char *editorRowsToString(int *buflen) {
 }
 
 void editorOpen(char *filename) {
-  free(E.filename);
+  /* TODO: if file does not exist, we shouldn't crash.
+     Instead, offer to create a new file or exit gracefully. */
+
   E.filename = strdup(filename);
 
   editorSelectSyntaxHighlight();
@@ -802,7 +905,7 @@ void abAppend(struct abuf *ab, const char *s, int len) {
 
 void abFree(struct abuf *ab) {
   free(ab->b);
-  // todo: i really think we should clear out ab, right now
+  // TODO: I really think we should clear out ab, right now
   // we've got a dangling reference ... it looks as if the usage
   // is scoped to a function and not global, so we are probably
   // safe, but I don't like it.
@@ -838,7 +941,7 @@ void editorDrawRows(struct abuf *ab) {
       if (E.numrows == 0 && y == E.screenrows / 3) {
         char welcome[80];
         int welcomelen = snprintf(welcome, sizeof(welcome),
-                                  "Kilo editor -- version %s", KILO_VERSION);
+                                  "TVI editor -- version %s", TVI_VERSION);
         if (welcomelen > E.screencols)
           welcomelen = E.screencols;
         int padding = (E.screencols - welcomelen) / 2;
@@ -1024,7 +1127,7 @@ void editorMoveCursor(int key) {
     if (row && E.cx < row->size) {
       E.cx++;
     } else if (row && E.cx == row->size) {
-      // todo this may fail at end of file, i think it will
+      // TODO: this may fail at end of file, i think it will
       // after testing, it doesn't crash but it does move the cursor
       // off the file to a ~ line
       E.cy++;
@@ -1047,7 +1150,7 @@ void editorMoveCursor(int key) {
 }
 
 void editorProcessKeypress() {
-  static int quit_times = KILO_QUIT_TIMES;
+  static int quit_times = TVI_QUIT_TIMES;
 
   int c = editorReadKey();
 
@@ -1125,7 +1228,7 @@ void editorProcessKeypress() {
     editorInsertChar(c);
     break;
   }
-  quit_times = KILO_QUIT_TIMES;
+  quit_times = TVI_QUIT_TIMES;
 }
 
 /*** init ***/
