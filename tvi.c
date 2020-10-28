@@ -161,14 +161,28 @@ char *Text_HL_extensions[] = {".txt", ".TXT", NULL};
 /* keywords support two tiers of keywords, for C it's broken down by keywords
 ** and common types. types as tier 2 are denoted by a sufix pipe symbol. */
 
-char *C_HL_kw[] = {"switch",    "if",      "while",   "for",    "break",
-                   "continue",  "return",  "else",    "struct", "union",
-                   "typedef",   "static",  "enum",    "class",  "case",
+// TODO: bug ... some digraph operators such as ==, <<, && are failing
+// to highlight correctly because the single character forms sort in
+// front of them and they are themselves delimiters. I'm not sure how
+// to fix this yet.
+//
+// One idea: the trailing 0 causes shorter words to sort in front of
+// longer ones. So, perhaps either changing the sort compare to alter
+// this or adding a x'ff' to the end would work.
+//
+// TODO: error ... the use of | as the tier marker is going to cause
+// problems since | is also a valid operator character.
+char *C_HL_Keywords[] = {
+    "switch",    "if",    "while",   "for",      "break",   "continue",
+    "return",    "else",  "struct",  "union",    "typedef", "static",
+    "enum",      "class", "case",    "#include", "#define", "NULL",
+    "namespace", "!",     "!=",      "=",        "<",       ">",
+    "->",        "<<",    ">>",      "==",       "&&",
 
-                   "int|",      "long|",   "double|", "float|", "char|",
-                   "unsigned|", "signed|", "void|",   NULL};
+    "int|",      "long|", "double|", "float|",   "char|",   "unsigned|",
+    "signed|",   "void|", NULL};
 
-char *Pascal_HL_kw[] = {
+char *Pascal_HL_Keywords[] = {
     "begin",       "end",        "if",        "then",           "else",
     "goto",        "while",      "do",        "until",          "program",
     "type",        "const",      "var",       "procedure",      "function",
@@ -180,66 +194,33 @@ char *Pascal_HL_kw[] = {
     "record|",     "set|",       "string|",   "type|",          "integer|",
     "float|",      "double|",    "real|",     "char|",          NULL};
 
-char *Python_HL_kw[] = {"and",
-                        "as",
-                        "assert",
-                        "break",
-                        "class",
-                        "continue",
-                        "def",
-                        "del",
-                        "elif",
-                        "else",
-                        "except",
-                        "False",
-                        "finally",
-                        "for",
-                        "from",
-                        "global",
-                        "if",
-                        "import",
-                        "in",
-                        "is",
-                        "lambda",
-                        "None",
-                        "nonlocal",
-                        "not"
-                        "or",
-                        "pass",
-                        "raise",
-                        "return",
-                        "True",
-                        "try",
-                        "while",
-                        "with",
-                        "yield",
+char *Python_HL_Keywords[] = {
+    "and",  "as",       "assert",   "break",  "class",  "continue", "def",
+    "del",  "elif",     "else",     "except", "False",  "finally",  "for",
+    "from", "global",   "if",       "import", "in",     "is",       "lambda",
+    "None", "nonlocal", "not",      "or",     "pass",   "raise",    "return",
+    "True", "try",      "while",    "with",   "yield",
 
-                        "int|",
-                        "float|",
-                        "complex|",
-                        "list|",
-                        "tuple|",
-                        "range|",
-                        "str|",
-                        NULL};
+    "int|", "float|",   "complex|", "list|",  "tuple|", "range|",   "str|",
+    NULL};
 
-char *Markdown_HL_kw[] = {NULL};
+char *Markdown_HL_Keywords[] = {NULL};
 
-char *Text_HL_kw[] = {NULL};
+char *Text_HL_Keywords[] = {NULL};
 
 struct editorSyntax HLDB[] = {
-    {"C", C_HL_extensions, C_HL_kw, 1, "//", "/*", "*/",
+    {"C", C_HL_extensions, C_HL_Keywords, 1, "//", "/*", "*/",
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
          HL_HIGHLIGHT_KEYWORDS},
-    {"Pascal", Pascal_HL_extensions, Pascal_HL_kw, 0, "//", "{", "}",
+    {"Pascal", Pascal_HL_extensions, Pascal_HL_Keywords, 0, "//", "{", "}",
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
          HL_HIGHLIGHT_KEYWORDS},
-    {"Python", Python_HL_extensions, Python_HL_kw, 1, "#", NULL, NULL,
+    {"Python", Python_HL_extensions, Python_HL_Keywords, 1, "#", NULL, NULL,
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
          HL_HIGHLIGHT_KEYWORDS},
-    {"Markdown", Markdown_HL_extensions, Markdown_HL_kw, 0, NULL, NULL, NULL,
-     0},
-    {"Text", Text_HL_extensions, Text_HL_kw, 0, NULL, NULL, NULL,
+    {"Markdown", Markdown_HL_extensions, Markdown_HL_Keywords, 0, NULL, NULL,
+     NULL, 0},
+    {"Text", Text_HL_extensions, Text_HL_Keywords, 0, NULL, NULL, NULL,
      HL_HIGHLIGHT_NUMBERS}};
 
 #define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
@@ -490,15 +471,21 @@ void editorUpdateSyntax(erow *row) {
     if (prev_sep && E.syntax->flags & HL_HIGHLIGHT_KEYWORDS) {
       int j;
       for (j = 0; keywords[j]; j++) {
+
+        // TODO: is it worth doing this at init time as well? create a
+        // smarter list for the lookup?
         int klen = strlen(keywords[j]);
         int kw2 = keywords[j][klen - 1] == '|';
         if (kw2)
           klen--;
 
-        if (!(E.syntax->keywords_case_sensitive
-                  ? strncmp(&row->render[i], keywords[j], klen)
-                  : strncasecmp(&row->render[i], keywords[j], klen)) &&
-            is_separator(row->render[i + klen])) {
+        // TODO: now that keywords are sorted, abort if we've gone
+        // past all possible keywords -- strncmp result > 0
+
+        int not_found = (E.syntax->keywords_case_sensitive
+                             ? strncmp(&row->render[i], keywords[j], klen)
+                             : strncasecmp(&row->render[i], keywords[j], klen));
+        if (!not_found && is_separator(row->render[i + klen])) {
           memset(&row->hl[i], kw2 ? HL_KEYWORD2 : HL_KEYWORD1, klen);
           i += klen;
           break;
@@ -1248,6 +1235,13 @@ void editorProcessKeypress() {
 }
 
 /*** init ***/
+static int cmpstringp(const void *p1, const void *p2) {
+  /* The actual arguments to this function are "pointers to
+   * pointers to char", but strcmp(3) arguments are "pointers
+   * to char", hence the following cast plus dereference */
+
+  return strcmp(*(char *const *)p1, *(char *const *)p2);
+}
 
 void initEditor() {
   E.cx = 0;
@@ -1263,6 +1257,22 @@ void initEditor() {
   E.syntax = NULL;
   E.highlighting = 1;
 
+  unsigned int i;
+  for (i = 0; i < HLDB_ENTRIES; i++) {
+    if (HLDB[i].keywords) {
+      int j = 0;
+      while (HLDB[i].keywords[j])
+        j++;
+      size_t k = (j + 1) * sizeof(HLDB[i].keywords[0]);
+      char **kw_copy = malloc(k);
+      if (!kw_copy)
+        die("initEditor-malloc");
+      memcpy(kw_copy, HLDB[i].keywords, k);
+      /* malloc to include trailing null entry, but don't include it in sort */
+      qsort(kw_copy, j, sizeof(char *), cmpstringp);
+      HLDB[i].keywords = kw_copy;
+    }
+  }
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die("initEditor-getWindowSize");
   E.screenrows -= 2;
@@ -1277,7 +1287,8 @@ int main(int argc, char *argv[]) {
     editorOpen(argv[1]);
   }
 
-  editorSetStatusMessage(" HELP: ctrl-Q = quit, ctrl-S = save, Ctrl-F = find");
+  editorSetStatusMessage(" HELP: ctrl-Q = quit, ctrl-S = save, Ctrl-F = find, "
+                         "Ctrl-T = toggle hilighting");
 
   while (1) {
     editorRefreshScreen();
