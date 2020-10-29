@@ -111,12 +111,13 @@ enum editorHighlight {
 
 struct editorSyntax {
   char *filetype;
-  char **filematch;
+  char **extensions;
   char **keywords;
-  int keywords_case_sensitive;
-  char *singleline_comment_start;
-  char *multiline_comment_start;
-  char *multiline_comment_end;
+  int keywordCount;
+  int keywordsCaseSensitive;
+  char *lineCommentStart;
+  char *blockCommentStart;
+  char *blockCommentEnd;
   int flags;
 };
 
@@ -158,76 +159,84 @@ char *Python_HL_extensions[] = {".py", NULL};
 char *Markdown_HL_extensions[] = {".md", ".MD", NULL};
 char *Text_HL_extensions[] = {".txt", ".TXT", NULL};
 
-/* keywords support two tiers of keywords, for C it's broken down by keywords
-** and common types. types as tier 2 are denoted by a sufix pipe symbol. */
-
-// TODO: bug ... some digraph operators such as ==, <<, && are failing
-// to highlight correctly because the single character forms sort in
-// front of them and they are themselves delimiters. I'm not sure how
-// to fix this yet.
+// keywords originally supported two tiers of keywords. For C it was broken
+// down by keywords and common types. types were originally flagged by a suffix
+// pipe symbol, but that causes problems once operators are added to the keyword
+// lists. Now a suffix of \xff is used. Still to come is a third tier for
+// operators.
 //
-// One idea: the trailing 0 causes shorter words to sort in front of
-// longer ones. So, perhaps either changing the sort compare to alter
-// this or adding a x'ff' to the end would work.
+// All the highlight chunking needs to work from larger to smaller chunks,
+// so the larger supersedes the smaller. For example, comments wrapping
+// code should suppress highlighting of interior elements.
 //
-// TODO: error ... the use of | as the tier marker is going to cause
-// problems since | is also a valid operator character.
-// NOTE: there are apparent duplicate entries (eg, "#" + "INCLUDE" and
-// "#INCLUDE"). Rather than break the highlight loop to deal with
-// optional spaces after the "#", I've opted to waste some space
-// in the table.
+// Also, tokens with the same prefix should work from longer to smaller.
+// If not, ! comes before != and this leaves the = not highlighted.
+//
+// At load time, the keyword tables are sorted alphabetically and then
+// a fixup pass is done so that the cases like ! != are reversed.
+//
 // TODO: preprocessor directives start a line, ... test for this.
-char *C_HL_Keywords[] = {
-    "switch",    "if",      "while",   "for",     "break",   "continue",
-    "return",    "else",    "struct",  "union",   "typedef", "static",
-    "enum",      "class",   "case",    "include", "define",  "NULL",
-    "#include",  "#define", "ifdef",   "#ifdef",  "#then",   "#",
-    "namespace", "!",       "!=",      "=",       "<",       ">",
-    "->",        "<<",      ">>",      "==",      "&&",      "|",
-    "||",        "|=",      "&",       "&=",
+// TODO: currently preprocessor directs are entered both with and
+// without the leading # due to a bug in separator handling.
+char *C_HL_Keywords[] = {"switch",     "if",       "while",
+                         "for",        "break",    "continue",
+                         "return",     "else",     "struct",
+                         "union",      "typedef",  "static",
+                         "enum",       "class",    "case",
+                         "include",    "define",   "NULL",
+                         "#include",   "#define",  "ifdef",
+                         "#ifdef",     "#then",    "#",
+                         "namespace",  "!",        "!=",
+                         "=",          "<",        ">",
+                         "->",         "<<",       ">>",
+                         "==",         "&&",       "|",
+                         "||",         "|=",       "&",
+                         "&=",
 
-    "int|",      "long|",   "double|", "float|",  "char|",   "unsigned|",
-    "signed|",   "void|",   NULL};
+                         "int\xff",    "long\xff", "double\xff",
+                         "float\xff",  "char\xff", "unsigned\xff",
+                         "signed\xff", "void\xff", NULL};
 
 char *Pascal_HL_Keywords[] = {
-    "begin",       "end",        "if",        "then",           "else",
-    "goto",        "while",      "do",        "until",          "program",
-    "type",        "const",      "var",       "procedure",      "function",
-    "repeat",      "for",        "to",        "downto",         "unit",
-    "uses",        "with",       "interface", "implementation", "in",
-    "constructor", "destructor", "nil",       "exit",
+    "begin",       "end",        "if",         "then",           "else",
+    "goto",        "while",      "do",         "until",          "program",
+    "type",        "const",      "var",        "procedure",      "function",
+    "repeat",      "for",        "to",         "downto",         "unit",
+    "uses",        "with",       "interface",  "implementation", "in",
+    "constructor", "destructor", "nil",        "exit",
 
-    "array|",      "file|",      "object|",   "packed|",        "label|",
-    "record|",     "set|",       "string|",   "type|",          "integer|",
-    "float|",      "double|",    "real|",     "char|",          NULL};
+    "array\xff",   "file\xff",   "object\xff", "packed\xff",     "label\xff",
+    "record\xff",  "set\xff",    "string\xff", "type\xff",       "integer\xff",
+    "float\xff",   "double\xff", "real\xff",   "char\xff",       NULL};
 
 char *Python_HL_Keywords[] = {
-    "and",  "as",       "assert",   "break",  "class",  "continue", "def",
-    "del",  "elif",     "else",     "except", "False",  "finally",  "for",
-    "from", "global",   "if",       "import", "in",     "is",       "lambda",
-    "None", "nonlocal", "not",      "or",     "pass",   "raise",    "return",
-    "True", "try",      "while",    "with",   "yield",
+    "and",     "as",        "assert",      "break",    "class",     "continue",
+    "def",     "del",       "elif",        "else",     "except",    "False",
+    "finally", "for",       "from",        "global",   "if",        "import",
+    "in",      "is",        "lambda",      "None",     "nonlocal",  "not",
+    "or",      "pass",      "raise",       "return",   "True",      "try",
+    "while",   "with",      "yield",
 
-    "int|", "float|",   "complex|", "list|",  "tuple|", "range|",   "str|",
-    NULL};
+    "int\xff", "float\xff", "complex\xff", "list\xff", "tuple\xff", "range\xff",
+    "str\xff", NULL};
 
 char *Markdown_HL_Keywords[] = {NULL};
 
 char *Text_HL_Keywords[] = {NULL};
 
 struct editorSyntax HLDB[] = {
-    {"C", C_HL_extensions, C_HL_Keywords, 1, "//", "/*", "*/",
+    {"C", C_HL_extensions, C_HL_Keywords, 0, 1, "//", "/*", "*/",
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
          HL_HIGHLIGHT_KEYWORDS},
-    {"Pascal", Pascal_HL_extensions, Pascal_HL_Keywords, 0, "//", "{", "}",
+    {"Pascal", Pascal_HL_extensions, Pascal_HL_Keywords, 0, 0, "//", "{", "}",
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
          HL_HIGHLIGHT_KEYWORDS},
-    {"Python", Python_HL_extensions, Python_HL_Keywords, 1, "#", NULL, NULL,
+    {"Python", Python_HL_extensions, Python_HL_Keywords, 0, 1, "#", NULL, NULL,
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
          HL_HIGHLIGHT_KEYWORDS},
-    {"Markdown", Markdown_HL_extensions, Markdown_HL_Keywords, 0, NULL, NULL,
+    {"Markdown", Markdown_HL_extensions, Markdown_HL_Keywords, 0, 0, NULL, NULL,
      NULL, 0},
-    {"Text", Text_HL_extensions, Text_HL_Keywords, 0, NULL, NULL, NULL,
+    {"Text", Text_HL_extensions, Text_HL_Keywords, 0, 0, NULL, NULL, NULL,
      HL_HIGHLIGHT_NUMBERS}};
 
 #define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
@@ -395,9 +404,9 @@ void editorUpdateSyntax(erow *row) {
 
   char **keywords = E.syntax->keywords;
 
-  char *scs = E.syntax->singleline_comment_start;
-  char *mcs = E.syntax->multiline_comment_start;
-  char *mce = E.syntax->multiline_comment_end;
+  char *scs = E.syntax->lineCommentStart;
+  char *mcs = E.syntax->blockCommentStart;
+  char *mce = E.syntax->blockCommentEnd;
 
   int scs_len = scs ? strlen(scs) : 0;
   int mcs_len = mcs ? strlen(mcs) : 0;
@@ -482,14 +491,14 @@ void editorUpdateSyntax(erow *row) {
         // TODO: is it worth doing this at init time as well? create a
         // smarter list for the lookup?
         int klen = strlen(keywords[j]);
-        int kw2 = keywords[j][klen - 1] == '|';
+        int kw2 = keywords[j][klen - 1] == '\xff';
         if (kw2)
           klen--;
 
         // TODO: now that keywords are sorted, abort if we've gone
         // past all possible keywords -- strncmp result > 0
 
-        int not_found = (E.syntax->keywords_case_sensitive
+        int not_found = (E.syntax->keywordsCaseSensitive
                              ? strncmp(&row->render[i], keywords[j], klen)
                              : strncasecmp(&row->render[i], keywords[j], klen));
         if (!not_found && is_separator(row->render[i + klen])) {
@@ -553,10 +562,10 @@ void editorSelectSyntaxHighlight() {
   for (unsigned int j = 0; j < HLDB_ENTRIES; j++) {
     struct editorSyntax *s = &HLDB[j];
     unsigned int i = 0;
-    while (s->filematch[i]) {
-      int is_ext = (s->filematch[i][0] == '.');
-      if ((is_ext && ext && !strcmp(ext, s->filematch[i])) ||
-          (!is_ext && strstr(E.filename, s->filematch[i]))) {
+    while (s->extensions[i]) {
+      int is_ext = (s->extensions[i][0] == '.');
+      if ((is_ext && ext && !strcmp(ext, s->extensions[i])) ||
+          (!is_ext && strstr(E.filename, s->extensions[i]))) {
         E.syntax = s;
         int filerow;
         for (filerow = 0; filerow < E.numrows; filerow++) {
@@ -1250,6 +1259,63 @@ static int cmpstringp(const void *p1, const void *p2) {
   return strcmp(*(char *const *)p1, *(char *const *)p2);
 }
 
+// Sort and massage keyword tables for syntax highlighting. Also
+// check for duplicate entries in a table and report an error if
+// found.
+void initializeKeywordTables() {
+  unsigned int i;
+  for (i = 0; i < HLDB_ENTRIES; i++) {
+    if (HLDB[i].keywords) {
+      int j = 0;
+      while (HLDB[i].keywords[j])
+        j++;
+      HLDB[i].keywordCount = j;
+
+      // allocate room for the whole list -and- the trailing
+      // null entry.
+      size_t k = (j + 1) * sizeof(HLDB[i].keywords[0]);
+      char **kw_copy = malloc(k);
+      if (!kw_copy)
+        die("initEditor-malloc");
+      memcpy(kw_copy, HLDB[i].keywords, k);
+
+      // do not include trailing null entry in sort
+      qsort(kw_copy, j, sizeof(char *), cmpstringp);
+
+      // Sort single character operators behind the double character variants
+      // so that they highlight correctly. So, << in front of <, and so on.
+      int fixed = 1;
+      while (fixed) {
+        fixed = 0;
+        for (j = 0; j < HLDB[i].keywordCount - 1; j++) {
+          if (strlen(kw_copy[j]) == (strlen(kw_copy[j + 1]) - 1)) {
+            if (strncmp(kw_copy[j], kw_copy[j + 1], strlen(kw_copy[j])) == 0) {
+              fixed = 1;
+              void *temp;
+              temp = kw_copy[j];
+              kw_copy[j] = kw_copy[j + 1];
+              kw_copy[j + 1] = temp;
+            }
+          }
+        }
+      }
+
+      // Check for duplicate keywords and error out if any are found.
+      for (j = 0; j < HLDB[i].keywordCount - 1; j++) {
+        if (strcmp(kw_copy[j], kw_copy[j + 1]) == 0) {
+          char errmsg[80];
+          snprintf(errmsg, 79, "duplicate keyword in syntax table for %s '%s'",
+                   HLDB[i].filetype, kw_copy[j]);
+          errno = EINVAL;
+          die(errmsg);
+        }
+      }
+
+      HLDB[i].keywords = kw_copy;
+    }
+  }
+}
+
 void initEditor() {
   E.cx = 0;
   E.cy = 0;
@@ -1263,45 +1329,10 @@ void initEditor() {
   E.statusmsg_time = 0;
   E.syntax = NULL;
   E.highlighting = 1;
-
-  unsigned int i;
-  for (i = 0; i < HLDB_ENTRIES; i++) {
-    if (HLDB[i].keywords) {
-      int j = 0;
-      while (HLDB[i].keywords[j])
-        j++;
-      size_t k = (j + 1) * sizeof(HLDB[i].keywords[0]);
-      char **kw_copy = malloc(k);
-      if (!kw_copy)
-        die("initEditor-malloc");
-      memcpy(kw_copy, HLDB[i].keywords, k);
-      /* malloc to include trailing null entry, but don't include it in sort */
-      qsort(kw_copy, j, sizeof(char *), cmpstringp);
-      /* Sort single character operators behind the double character variants
-       * so that they highlight correctly. So, << in front of <, and so on. */
-      int m = j;
-      int fixed = 1;
-      while (fixed) {
-        fixed = 0;
-        for (j = 0; j < m - 1; j++) {
-          if (strlen(kw_copy[j]) == (strlen(kw_copy[j + 1]) - 1)) {
-            if (strncmp(kw_copy[j], kw_copy[j + 1], strlen(kw_copy[j])) == 0) {
-              fixed = 1;
-              void *temp;
-              temp = kw_copy[j];
-              kw_copy[j] = kw_copy[j + 1];
-              kw_copy[j + 1] = temp;
-            }
-          }
-        }
-      }
-      //
-      HLDB[i].keywords = kw_copy;
-    }
-  }
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die("initEditor-getWindowSize");
   E.screenrows -= 2;
+  initializeKeywordTables();
 }
 
 /*** main ***/
