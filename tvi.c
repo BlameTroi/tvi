@@ -172,15 +172,22 @@ char *Text_HL_extensions[] = {".txt", ".TXT", NULL};
 //
 // TODO: error ... the use of | as the tier marker is going to cause
 // problems since | is also a valid operator character.
+// NOTE: there are apparent duplicate entries (eg, "#" + "INCLUDE" and
+// "#INCLUDE"). Rather than break the highlight loop to deal with
+// optional spaces after the "#", I've opted to waste some space
+// in the table.
+// TODO: preprocessor directives start a line, ... test for this.
 char *C_HL_Keywords[] = {
-    "switch",    "if",    "while",   "for",      "break",   "continue",
-    "return",    "else",  "struct",  "union",    "typedef", "static",
-    "enum",      "class", "case",    "#include", "#define", "NULL",
-    "namespace", "!",     "!=",      "=",        "<",       ">",
-    "->",        "<<",    ">>",      "==",       "&&",
+    "switch",    "if",      "while",   "for",     "break",   "continue",
+    "return",    "else",    "struct",  "union",   "typedef", "static",
+    "enum",      "class",   "case",    "include", "define",  "NULL",
+    "#include",  "#define", "ifdef",   "#ifdef",  "#then",   "#",
+    "namespace", "!",       "!=",      "=",       "<",       ">",
+    "->",        "<<",      ">>",      "==",      "&&",      "|",
+    "||",        "|=",      "&",       "&=",
 
-    "int|",      "long|", "double|", "float|",   "char|",   "unsigned|",
-    "signed|",   "void|", NULL};
+    "int|",      "long|",   "double|", "float|",  "char|",   "unsigned|",
+    "signed|",   "void|",   NULL};
 
 char *Pascal_HL_Keywords[] = {
     "begin",       "end",        "if",        "then",           "else",
@@ -1270,6 +1277,25 @@ void initEditor() {
       memcpy(kw_copy, HLDB[i].keywords, k);
       /* malloc to include trailing null entry, but don't include it in sort */
       qsort(kw_copy, j, sizeof(char *), cmpstringp);
+      /* Sort single character operators behind the double character variants
+       * so that they highlight correctly. So, << in front of <, and so on. */
+      int m = j;
+      int fixed = 1;
+      while (fixed) {
+        fixed = 0;
+        for (j = 0; j < m - 1; j++) {
+          if (strlen(kw_copy[j]) == (strlen(kw_copy[j + 1]) - 1)) {
+            if (strncmp(kw_copy[j], kw_copy[j + 1], strlen(kw_copy[j])) == 0) {
+              fixed = 1;
+              void *temp;
+              temp = kw_copy[j];
+              kw_copy[j] = kw_copy[j + 1];
+              kw_copy[j + 1] = temp;
+            }
+          }
+        }
+      }
+      //
       HLDB[i].keywords = kw_copy;
     }
   }
