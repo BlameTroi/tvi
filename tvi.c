@@ -1,14 +1,28 @@
 // tvi.c troi's smallish vimish editor
 //
-// started from kilo.c as from
-// https://viewsourcecode.org/snaptoken/kilo/
+// clang-format off
+//
+// started from my pass through the tutorial
+// at https://viewsourcecode.org/snaptoken/kilo/
+// kilo originally by antirez http://antirez.com/news/108
+// the original work is theirs, I'm just futzing around.
+//
+// kilo released under BSD 2-Clause license
+// https://github.com/antirez/kilo/blob/master/LICENSE 
+//
+// tutorial released under
+// CC BY 4.0 https://creativecommons.org/licenses/by/4.0/
+//
+// As I said, I'm just futzing around. Anything I've done here
+// is free to use if you think it's useful. Use at your own
+// risk and honor the original authors.
 //
 // Troy Brumley, October 2020.
 //
 // *** TODO: must add more formal attribution to snaptoken and
 // ***       antirez.
 //
-// Ideas in no particular order.
+// Ideas in no particular order:
 //
 // Code cleanup and formatting more to my preferences
 //
@@ -49,6 +63,7 @@
 //
 // Hex edit mode
 //
+// clang-format on
 
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
@@ -67,12 +82,12 @@
 #include <time.h>
 #include <unistd.h>
 
-/*** defines ***/
-
 #define TVI_VERSION "0.0.1"
 #define TVI_TAB_STOP 8
 #define TVI_QUIT_TIMES 3
 
+///////////////////////////////////////////////////////////
+// keyboard
 #define CTRL_KEY(k) ((k)&0x1f)
 
 enum editorKey {
@@ -88,6 +103,8 @@ enum editorKey {
   PAGE_DOWN
 };
 
+///////////////////////////////////////////////
+// highlighting
 enum editorHighlight {
   HL_NORMAL = 0,
   HL_COMMENT,
@@ -97,7 +114,8 @@ enum editorHighlight {
   HL_STRING,
   HL_NUMBER,
   HL_OPERATOR,
-  HL_MATCH
+  HL_MATCH,
+  HL_PUNCTUATION
 };
 
 #define HL_HIGHLIGHT_DONT (1 << 0)
@@ -106,53 +124,9 @@ enum editorHighlight {
 #define HL_HIGHLIGHT_COMMENT (1 << 3)
 #define HL_HIGHLIGHT_KEYWORDS (1 << 4)
 #define HL_HIGHLIGHT_OPERATORS (1 << 5)
+#define HL_HIGHLIGHT_PUNCTUATION (1 << 6)
 
-/*** data ***/
-
-struct editorSyntax {
-  char *filetype;
-  char **extensions;
-  char **keywords;
-  int keywordCount;
-  int keywordsCaseSensitive;
-  char *lineCommentStart;
-  char *blockCommentStart;
-  char *blockCommentEnd;
-  int flags;
-};
-
-typedef struct erow {
-  int idx;
-  int size;
-  int rsize;
-  char *chars;
-  char *render;
-  unsigned char *hl;
-  int hl_open_comment;
-} erow;
-
-struct editorConfig {
-  int cx, cy;
-  int rx;
-  int rowoff;
-  int coloff;
-  int highlighting;
-  int screenrows;
-  int screencols;
-  int numrows;
-  erow *row;
-  int dirty;
-  char *filename;
-  char statusmsg[80];
-  time_t statusmsg_time;
-  struct editorSyntax *syntax;
-  struct termios orig_termios;
-};
-
-struct editorConfig E;
-
-/*** filetypes ***/
-
+// canned filetype extensions
 char *C_HL_extensions[] = {".c", ".h", ".cpp", ".C", ".H", ".CPP", NULL};
 char *Pascal_HL_extensions[] = {".pas", ".pp", ".PAS", ".PP", NULL};
 char *Python_HL_extensions[] = {".py", NULL};
@@ -224,30 +198,127 @@ char *Markdown_HL_Keywords[] = {NULL};
 
 char *Text_HL_Keywords[] = {NULL};
 
+// syntax highlighting declaration
+struct editorSyntax {
+  char *filetype;
+  char **extensions;
+  char **keywords;
+  int keywordCount;
+  int keywordsCaseSensitive;
+  char *lineCommentStart;
+  char *blockCommentStart;
+  char *blockCommentEnd;
+  int flags;
+};
+
+// clang-format off
+// syntax highlighting definitions
 struct editorSyntax HLDB[] = {
-    {"C", C_HL_extensions, C_HL_Keywords, 0, 1, "//", "/*", "*/",
-     HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
-         HL_HIGHLIGHT_KEYWORDS},
-    {"Pascal", Pascal_HL_extensions, Pascal_HL_Keywords, 0, 0, "//", "{", "}",
-     HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
-         HL_HIGHLIGHT_KEYWORDS},
-    {"Python", Python_HL_extensions, Python_HL_Keywords, 0, 1, "#", NULL, NULL,
-     HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_COMMENT |
-         HL_HIGHLIGHT_KEYWORDS},
-    {"Markdown", Markdown_HL_extensions, Markdown_HL_Keywords, 0, 0, NULL, NULL,
-     NULL, 0},
-    {"Text", Text_HL_extensions, Text_HL_Keywords, 0, 0, NULL, NULL, NULL,
-     HL_HIGHLIGHT_NUMBERS}};
+
+    {"C",
+    C_HL_extensions,
+    C_HL_Keywords,
+    0,
+    1,
+    "//",
+    "/*",
+    "*/",
+    HL_HIGHLIGHT_NUMBERS
+    | HL_HIGHLIGHT_STRINGS
+    | HL_HIGHLIGHT_COMMENT
+    | HL_HIGHLIGHT_KEYWORDS},
+
+    {"Pascal",
+    Pascal_HL_extensions,
+    Pascal_HL_Keywords,
+    0,
+    0,
+    "//",
+    "{",
+    "}",
+    HL_HIGHLIGHT_NUMBERS
+    | HL_HIGHLIGHT_STRINGS
+    | HL_HIGHLIGHT_COMMENT
+    | HL_HIGHLIGHT_KEYWORDS},
+
+    {"Python",
+    Python_HL_extensions,
+    Python_HL_Keywords,
+    0,
+    1,
+    "#",
+    NULL,
+    NULL,
+    HL_HIGHLIGHT_NUMBERS
+    | HL_HIGHLIGHT_STRINGS
+    | HL_HIGHLIGHT_COMMENT
+    | HL_HIGHLIGHT_KEYWORDS},
+
+    {"Markdown",
+    Markdown_HL_extensions,
+    Markdown_HL_Keywords,
+    0,
+    0,
+    NULL,
+    NULL,
+    NULL,
+    0},
+
+    {"Text",
+    Text_HL_extensions,
+    Text_HL_Keywords,
+    0,
+    0,
+    NULL,
+    NULL,
+    NULL,
+    HL_HIGHLIGHT_NUMBERS
+    | HL_HIGHLIGHT_PUNCTUATION}
+  };
 
 #define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
+// clang-format on
 
-/*** prototypes ***/
+////////////////////////////////////////
+// text and screen state
+typedef struct erow {
+  int idx;
+  int size;
+  int rsize;
+  char *chars;
+  char *render;
+  unsigned char *hl;
+  int hl_open_comment;
+} erow;
 
+struct editorConfig {
+  int cx, cy;
+  int rx;
+  int rowoff;
+  int coloff;
+  int highlighting;
+  int screenrows;
+  int screencols;
+  int numrows;
+  erow *row;
+  int dirty;
+  char *filename;
+  char statusmsg[80];
+  time_t statusmsg_time;
+  struct editorSyntax *syntax;
+  struct termios orig_termios;
+};
+
+struct editorConfig E;
+
+////////////////////////////////
+// prototypes for foward references
 void editorSetStatusMessage(const char *fmt, ...);
 void editorRefreshScreen();
 char *editorPrompt(char *prompt, void (*callback)(char *, int));
 
-/*** error reporting ***/
+//////////////////////////////////
+// error reporting
 
 void die(const char *s) {
   /* NOTE: that trying to open a non-existant file when first
@@ -261,7 +332,8 @@ void die(const char *s) {
   exit(1);
 }
 
-/*** terminal ***/
+////////////////////////////////////////////////////
+// terminal state and management
 
 void disableRawMode() {
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1)
@@ -389,7 +461,10 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
-/*** syntax highlighting ***/
+///////////////////////////////////////////////////////////
+// syntax highlighting
+
+int is_punctuation(int c) { return strchr(".,():;[]!?", c) != 0; }
 
 int is_separator(int c) {
   return isspace(c) || c == '\0' || strchr("\"\',.()+-/*=~%<>[];", c) != NULL;
@@ -495,9 +570,6 @@ void editorUpdateSyntax(erow *row) {
         if (kw2)
           klen--;
 
-        // TODO: now that keywords are sorted, abort if we've gone
-        // past all possible keywords -- strncmp result > 0
-
         int not_found = (E.syntax->keywordsCaseSensitive
                              ? strncmp(&row->render[i], keywords[j], klen)
                              : strncasecmp(&row->render[i], keywords[j], klen));
@@ -513,10 +585,29 @@ void editorUpdateSyntax(erow *row) {
       }
     }
 
-    if (prev_sep && E.syntax->flags & HL_HIGHLIGHT_OPERATORS) {
+    // first attempt at operators, depending on the
+    // coding standards and langauge, there may not
+    // be any prior seperator.
+    if (E.syntax->flags & HL_HIGHLIGHT_OPERATORS) {
       /* TODO: need to implement, note that by relying on
            prev_sep we're not going to get operators without
            whitespace around them. */
+    }
+
+    // first attempt at punctuation, checking for prior
+    // separator is not needed to decide to highlight, but
+    // I think we do need to consider this to have been a
+    // separator.
+    if (E.syntax->flags & HL_HIGHLIGHT_PUNCTUATION) {
+      if (is_punctuation(c)) {
+        // only treat as punctuation if followed by whitespace
+        if (i == row->rsize - 1 || isspace(row->render[i + 1])) {
+          row->hl[i] = HL_PUNCTUATION;
+          i++;
+          prev_sep = 1;
+          continue;
+        }
+      }
     }
 
     prev_sep = is_separator(c);
@@ -546,6 +637,8 @@ int editorSyntaxToColor(int hl) {
   case HL_NUMBER:
     return 31;
   case HL_MATCH:
+    return 34;
+  case HL_PUNCTUATION:
     return 34;
   default:
     return 37;
@@ -578,7 +671,10 @@ void editorSelectSyntaxHighlight() {
   }
 }
 
-/*** row operations ***/
+/////////////////////////////////////////////////////////////
+// row of screen and in buffer mapping
+//
+// TODO: should the actual display be segregated?
 
 int editorRowCxToRx(erow *row, int cx) {
   int rx = 0;
@@ -702,7 +798,8 @@ void editorRowDelChar(erow *row, int at) {
   E.dirty++;
 }
 
-/*** editor operations ***/
+////////////////////////////////////////////////////
+// editor actions/operations
 
 void editorInsertChar(int c) {
   if (E.cy == E.numrows) {
@@ -744,7 +841,8 @@ void editorDelChar() {
   }
 }
 
-/*** file i/o ***/
+///////////////////////////////////////////////////////////
+// file access
 
 char *editorRowsToString(int *buflen) {
   int totlen = 0;
@@ -823,7 +921,8 @@ void editorSave() {
   editorSetStatusMessage(" Can't save! I/O error: %s", strerror(errno));
 }
 
-/*** find ***/
+////////////////////////////////////////////////////
+// search and maybe someday replace
 
 void editorFindCallback(char *query, int key) {
   static int last_match = -1;
@@ -918,15 +1017,10 @@ void abAppend(struct abuf *ab, const char *s, int len) {
   ab->len += len;
 }
 
-void abFree(struct abuf *ab) {
-  free(ab->b);
-  // TODO: I really think we should clear out ab, right now
-  // we've got a dangling reference ... it looks as if the usage
-  // is scoped to a function and not global, so we are probably
-  // safe, but I don't like it.
-}
+void abFree(struct abuf *ab) { free(ab->b); }
 
-/*** output ***/
+/////////////////////////////////////////////////
+// screen display
 
 void editorScroll() {
   E.rx = 0;
@@ -1083,7 +1177,8 @@ void editorSetStatusMessage(const char *fmt, ...) {
   E.statusmsg_time = time(NULL);
 }
 
-/*** input ***/
+/////////////////////////////////////////////////
+// line oriented input
 
 char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
   size_t bufsize = 128;
@@ -1126,6 +1221,9 @@ char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
   }
 }
 
+/////////////////////////////////////////////////////////////
+// cursoring
+
 void editorMoveCursor(int key) {
   erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
 
@@ -1164,6 +1262,8 @@ void editorMoveCursor(int key) {
     E.cx = rowlen;
 }
 
+//////////////////////////////////////////////////////
+// handle a keypress
 void editorProcessKeypress() {
   static int quit_times = TVI_QUIT_TIMES;
 
@@ -1250,12 +1350,11 @@ void editorProcessKeypress() {
   quit_times = TVI_QUIT_TIMES;
 }
 
-/*** init ***/
-static int cmpstringp(const void *p1, const void *p2) {
-  /* The actual arguments to this function are "pointers to
-   * pointers to char", but strcmp(3) arguments are "pointers
-   * to char", hence the following cast plus dereference */
+//////////////////////////////////////////////////////////////
+// initialization
 
+// sort comparison helper
+static int cmpstringp(const void *p1, const void *p2) {
   return strcmp(*(char *const *)p1, *(char *const *)p2);
 }
 
@@ -1335,7 +1434,8 @@ void initEditor() {
   initializeKeywordTables();
 }
 
-/*** main ***/
+///////////////////////////////////////////////////////////////////
+// main, fire it up
 
 int main(int argc, char *argv[]) {
   enableRawMode();
