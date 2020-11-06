@@ -87,6 +87,10 @@
 #define TVI_QUIT_TIMES 3
 
 ///////////////////////////////////////////////////////////
+// modes
+enum editorMode { EM_NORMAL, EM_VISUAL, EM_INSERT, EM_EX };
+
+///////////////////////////////////////////////////////////
 // keyboard
 #define CTRL_KEY(k) ((k)&0x1f)
 
@@ -307,6 +311,7 @@ struct editorConfig {
   time_t statusmsg_time;
   struct editorSyntax *syntax;
   struct termios orig_termios;
+  int mode;
 };
 
 struct editorConfig E;
@@ -1264,15 +1269,95 @@ void editorMoveCursor(int key) {
 
 //////////////////////////////////////////////////////
 // handle a keypress
+
+void editorProcessNormalKeypress(int c) {
+  if (c == ' ')
+    return;
+  // to be provided
+}
+
+// insert mode, keys just go through mostly
+// until an escape
+void editorProcessInsertKeypress(int c) {
+  if (c == '\x1b') {
+    E.mode = EM_NORMAL;
+    editorSetStatusMessage("", "");
+    return;
+  }
+  switch (c) {
+  case '\r':
+    editorInsertNewLine();
+    break;
+  case BACKSPACE:
+  case CTRL_KEY('h'):
+  case DEL_KEY:
+    if (c == DEL_KEY)
+      editorMoveCursor(ARROW_RIGHT);
+    editorDelChar();
+    break;
+
+  default:
+    editorInsertChar(c);
+  }
+}
+
+// visual keypress, movement and highlight
+void editorProcessVisualKeypress(int c) {
+  if (c == '\x1b') {
+    E.mode = EM_NORMAL;
+    editorSetStatusMessage("", "");
+    return;
+  }
+  // cursor movement here ...
+  return;
+}
+
+// input down on the status line
+void editorProcessEXKeypress(int c) {
+  if (c == ' ')
+    return;
+}
+
 void editorProcessKeypress() {
   static int quit_times = TVI_QUIT_TIMES;
 
+  // probably need to break this out at a high level by mode,
+  // and then process keys applicable to that mode. we'll get
+  // there.
+  //
+  // note: when in visual mode, keys are limited to esc and
+  // movement.
+  // full vi allows cursor movement while in input mode but
+  // i probably won't.
+
   int c = editorReadKey();
 
+  if (E.mode == EM_INSERT) {
+    editorProcessInsertKeypress(c);
+    return;
+  } else if (E.mode == EM_VISUAL) {
+    editorProcessVisualKeypress(c);
+    return;
+  } else if (E.mode == EM_EX) {
+    editorProcessEXKeypress(c);
+    return;
+  }
+
+  // normal mode here
   switch (c) {
 
-  case '\r':
-    editorInsertNewLine();
+  case 'i':
+    // ignore the fall through warning for now, need
+    // to restructure this whole routine
+    E.mode = EM_INSERT;
+    editorSetStatusMessage("-- %s --", "INSERT");
+    break;
+
+  case 'v':
+    // ignore the fall through warning for now, need
+    // to restructure this whole routine
+    E.mode = EM_VISUAL;
+    editorSetStatusMessage("-- %s --", "VISUAL");
     break;
 
   case CTRL_KEY('q'):
@@ -1309,14 +1394,6 @@ void editorProcessKeypress() {
     E.highlighting = !E.highlighting;
     break;
 
-  case BACKSPACE:
-  case CTRL_KEY('h'):
-  case DEL_KEY:
-    if (c == DEL_KEY)
-      editorMoveCursor(ARROW_RIGHT);
-    editorDelChar();
-    break;
-
   case PAGE_UP:
   case PAGE_DOWN: {
     if (c == PAGE_UP)
@@ -1340,11 +1417,13 @@ void editorProcessKeypress() {
     break;
 
   case CTRL_KEY('l'):
-  case '\x1b':
+    // this is a clear or repaint screen command usually, i'm not sure why
+    // it's blocked out here, must review the tutorial.
     break;
 
   default:
-    editorInsertChar(c);
+    // now only insert if in insert mode
+    // editorInsertChar(c);
     break;
   }
   quit_times = TVI_QUIT_TIMES;
@@ -1431,6 +1510,7 @@ void initEditor() {
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die("initEditor-getWindowSize");
   E.screenrows -= 2;
+  E.mode = EM_NORMAL;
   initializeKeywordTables();
 }
 
