@@ -1,3 +1,4 @@
+// vim: noai:et:ts=2:sw=2:sts=2
 // tvi.c troi's smallish vimish editor
 //
 // clang-format off
@@ -88,7 +89,7 @@
 
 ///////////////////////////////////////////////////////////
 // modes
-enum editorMode { EM_NORMAL, EM_VISUAL, EM_INSERT, EM_EX };
+enum editorMode { EM_NORMAL, EM_VISUAL, EM_INSERT, EM_COMMAND };
 
 ///////////////////////////////////////////////////////////
 // keyboard
@@ -312,6 +313,8 @@ struct editorConfig {
   struct editorSyntax *syntax;
   struct termios orig_termios;
   int mode;
+  int findForward;  // boolean search direction, true forward, false backward
+  char *findString; // last used find string
 };
 
 struct editorConfig E;
@@ -983,6 +986,10 @@ void editorFindCallback(char *query, int key) {
   }
 }
 
+// to be implemented
+void editorFindNext() { return; }
+
+// needs to deal with forward and backward
 void editorFind() {
   int saved_cx = E.cx;
   int saved_cy = E.cy;
@@ -993,7 +1000,10 @@ void editorFind() {
                              editorFindCallback);
 
   if (query) {
-    free(query);
+    // todo: i'm pretty sure this behavior isn't right wrt just hitting
+    // a slash or question followed by enter
+    free(E.findString);
+    E.findString = query;
   } else {
     E.cx = saved_cx;
     E.cy = saved_cy;
@@ -1313,9 +1323,61 @@ void editorProcessVisualKeypress(int c) {
 }
 
 // input down on the status line
+// todo: write and quit need to take input up to an enter
 void editorProcessEXKeypress(int c) {
-  if (c == ' ')
+
+  if (c == '\x1b') {
+    E.mode = EM_NORMAL;
+    editorSetStatusMessage("", "");
     return;
+  }
+
+  switch (c) {
+
+  case 'q':
+    if (E.dirty) {
+      editorSetStatusMessage(" Warning!!! Unsaved changes. :q! to override.");
+      E.mode = EM_NORMAL;
+      break;
+    }
+    write(STDOUT_FILENO, "\x1b[2J", 4); // erase display
+    write(STDOUT_FILENO, "\x1b[H", 3);  // home cursor
+    exit(0);
+
+  case 'w':
+    editorSave();
+    E.mode = EM_NORMAL;
+    break;
+  }
+
+  return;
+}
+
+int translateViKeys(int c) {
+  switch (c) {
+  case 'h':
+    return ARROW_LEFT;
+  case 'j':
+    return ARROW_DOWN;
+  case 'k':
+    return ARROW_UP;
+  case 'l':
+    return ARROW_RIGHT;
+  case 'w':
+    // word right, does nothing right now
+    return 0;
+  case 'b':
+    // word left, does nothing right now
+    return 0;
+  case 'a':
+    // insert after, does nothing right now
+    return 0;
+  case CTRL_KEY('f'):
+    return PAGE_DOWN;
+  case CTRL_KEY('b'):
+    return PAGE_UP;
+  }
+  return c;
 }
 
 void editorProcessKeypress() {
@@ -1338,26 +1400,46 @@ void editorProcessKeypress() {
   } else if (E.mode == EM_VISUAL) {
     editorProcessVisualKeypress(c);
     return;
-  } else if (E.mode == EM_EX) {
+  } else if (E.mode == EM_COMMAND) {
     editorProcessEXKeypress(c);
     return;
   }
+
+  // in normal mode, be sure to remap vi style movement keys
+  c = translateViKeys(c);
 
   // normal mode here
   switch (c) {
 
   case 'i':
-    // ignore the fall through warning for now, need
-    // to restructure this whole routine
     E.mode = EM_INSERT;
     editorSetStatusMessage("-- %s --", "INSERT");
     break;
 
   case 'v':
-    // ignore the fall through warning for now, need
-    // to restructure this whole routine
     E.mode = EM_VISUAL;
     editorSetStatusMessage("-- %s --", "VISUAL");
+    break;
+
+  case ':':
+    E.mode = EM_COMMAND;
+    editorSetStatusMessage("-- %s -- :", "COMMAND");
+    break;
+
+  case '/':
+    E.findForward = 1;
+    editorFind(); // forwards
+    break;
+
+  case '?':
+    E.findForward = 0;
+    editorFind(); // backwards
+    break;
+
+  case 'n':
+    if (E.findString) {
+      editorFindNext(); // in appropriate direction
+    }
     break;
 
   case CTRL_KEY('q'):
@@ -1384,10 +1466,6 @@ void editorProcessKeypress() {
   case END_KEY:
     if (E.cy < E.numrows)
       E.cx = E.row[E.cy].size;
-    break;
-
-  case CTRL_KEY('f'):
-    editorFind();
     break;
 
   case CTRL_KEY('t'):
@@ -1511,6 +1589,8 @@ void initEditor() {
     die("initEditor-getWindowSize");
   E.screenrows -= 2;
   E.mode = EM_NORMAL;
+  E.findForward = 1;
+  E.findString = NULL;
   initializeKeywordTables();
 }
 
@@ -1524,8 +1604,9 @@ int main(int argc, char *argv[]) {
     editorOpen(argv[1]);
   }
 
-  editorSetStatusMessage(" HELP: ctrl-Q = quit, ctrl-S = save, Ctrl-F = find, "
-                         "Ctrl-T = toggle hilighting");
+  editorSetStatusMessage(
+      " HELP: <esc>:q! = quit, <esc>:w = save, <esc>/ = find, "
+      "Ctrl-T = toggle hilighting");
 
   while (1) {
     editorRefreshScreen();
