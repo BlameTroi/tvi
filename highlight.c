@@ -22,6 +22,7 @@
 //
 
 #include "tvi.h"
+#include "highlight.h" 
 
 // canned filetype extensions
 char *C_HL_extensions[] = {".c", ".h", ".cpp", ".C", ".H", ".CPP", NULL};

@@ -90,78 +90,7 @@ enum editorHighlight {
 #define HL_HIGHLIGHT_OPERATORS (1 << 5)
 #define HL_HIGHLIGHT_PUNCTUATION (1 << 6)
 
-// // canned filetype extensions
-// char *C_HL_extensions[] = {".c", ".h", ".cpp", ".C", ".H", ".CPP", NULL};
-// char *Pascal_HL_extensions[] = {".pas", ".pp", ".PAS", ".PP", NULL};
-// char *Python_HL_extensions[] = {".py", NULL};
-// char *Markdown_HL_extensions[] = {".md", ".MD", NULL};
-// char *Text_HL_extensions[] = {".txt", ".TXT", NULL};
-// //
-// // keywords originally supported two tiers of keywords. For C it was broken
-// // down by keywords and common types. types were originally flagged by a suffix
-// // pipe symbol, but that causes problems once operators are added to the keyword
-// // lists. Now a suffix of \xff is used. Still to come is a third tier for
-// // operators.
-// //
-// // All the highlight chunking needs to work from larger to smaller chunks,
-// // so the larger supersedes the smaller. For example, comments wrapping
-// // code should suppress highlighting of interior elements.
-// //
-// // Also, tokens with the same prefix should work from longer to smaller.
-// // If not, ! comes before != and this leaves the = not highlighted.
-// //
-// // At load time, the keyword tables are sorted alphabetically and then
-// // a fixup pass is done so that the cases like ! != are reversed.
-// //
-// // TODO: preprocessor directives start a line, ... test for this.
-// // TODO: currently preprocessor directs are entered both with and
-// // without the leading # due to a bug in separator handling.
-// char *C_HL_Keywords[] = {"switch",     "if",       "while",
-//                          "for",        "break",    "continue",
-//                          "return",     "else",     "struct",
-//                          "union",      "typedef",  "static",
-//                          "enum",       "class",    "case",
-//                          "include",    "define",   "NULL",
-//                          "#include",   "#define",  "ifdef",
-//                          "#ifdef",     "#then",    "#",
-//                          "namespace",  "!",        "!=",
-//                          "=",          "<",        ">",
-//                          "->",         "<<",       ">>",
-//                          "==",         "&&",       "|",
-//                          "||",         "|=",       "&",
-//                          "&=",
-// 
-//                          "int\xff",    "long\xff", "double\xff",
-//                          "float\xff",  "char\xff", "unsigned\xff",
-//                          "signed\xff", "void\xff", NULL};
-// 
-// char *Pascal_HL_Keywords[] = {
-//     "begin",       "end",        "if",         "then",           "else",
-//     "goto",        "while",      "do",         "until",          "program",
-//     "type",        "const",      "var",        "procedure",      "function",
-//     "repeat",      "for",        "to",         "downto",         "unit",
-//     "uses",        "with",       "interface",  "implementation", "in",
-//     "constructor", "destructor", "nil",        "exit",
-// 
-//     "array\xff",   "file\xff",   "object\xff", "packed\xff",     "label\xff",
-//     "record\xff",  "set\xff",    "string\xff", "type\xff",       "integer\xff",
-//     "float\xff",   "double\xff", "real\xff",   "char\xff",       NULL};
-// 
-// char *Python_HL_Keywords[] = {
-//     "and",     "as",        "assert",      "break",    "class",     "continue",
-//     "def",     "del",       "elif",        "else",     "except",    "False",
-//     "finally", "for",       "from",        "global",   "if",        "import",
-//     "in",      "is",        "lambda",      "None",     "nonlocal",  "not",
-//     "or",      "pass",      "raise",       "return",   "True",      "try",
-//     "while",   "with",      "yield",
-// 
-//     "int\xff", "float\xff", "complex\xff", "list\xff", "tuple\xff", "range\xff",
-//     "str\xff", NULL};
-// 
-// char *Markdown_HL_Keywords[] = {NULL};
-// 
-// char *Text_HL_Keywords[] = {NULL};
-// 
+///////////////////////////////////////////////// 
 // syntax highlighting declaration
 struct editorSyntax {
   char *filetype;
@@ -174,74 +103,6 @@ struct editorSyntax {
   char *blockCommentEnd;
   int flags;
 };
-
-// // clang-format off
-// // syntax highlighting definitions
-// struct editorSyntax HLDB[] = {
-// 
-//     {"C",
-//     C_HL_extensions,
-//     C_HL_Keywords,
-//     0,
-//     1,
-//     "//",
-//     "/*",
-//     "*/",
-//     HL_HIGHLIGHT_NUMBERS
-//     | HL_HIGHLIGHT_STRINGS
-//     | HL_HIGHLIGHT_COMMENT
-//     | HL_HIGHLIGHT_KEYWORDS},
-// 
-//     {"Pascal",
-//     Pascal_HL_extensions,
-//     Pascal_HL_Keywords,
-//     0,
-//     0,
-//     "//",
-//     "{",
-//     "}",
-//     HL_HIGHLIGHT_NUMBERS
-//     | HL_HIGHLIGHT_STRINGS
-//     | HL_HIGHLIGHT_COMMENT
-//     | HL_HIGHLIGHT_KEYWORDS},
-// 
-//     {"Python",
-//     Python_HL_extensions,
-//     Python_HL_Keywords,
-//     0,
-//     1,
-//     "#",
-//     NULL,
-//     NULL,
-//     HL_HIGHLIGHT_NUMBERS
-//     | HL_HIGHLIGHT_STRINGS
-//     | HL_HIGHLIGHT_COMMENT
-//     | HL_HIGHLIGHT_KEYWORDS},
-// 
-//     {"Markdown",
-//     Markdown_HL_extensions,
-//     Markdown_HL_Keywords,
-//     0,
-//     0,
-//     NULL,
-//     NULL,
-//     NULL,
-//     0},
-// 
-//     {"Text",
-//     Text_HL_extensions,
-//     Text_HL_Keywords,
-//     0,
-//     0,
-//     NULL,
-//     NULL,
-//     NULL,
-//     HL_HIGHLIGHT_NUMBERS
-//     | HL_HIGHLIGHT_PUNCTUATION}
-//   };
-// 
-// #define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
-// // clang-format on
 
 ////////////////////////////////////////
 // text and screen state
@@ -276,7 +137,7 @@ struct editorConfig {
   char *findString; // last used find string
 };
 
-struct editorConfig E;
+extern struct editorConfig E;
 
 /*** append buffer ***/
 
@@ -285,12 +146,18 @@ struct abuf {
   int len;
 };
 
-#define ABUF_INIT                                                              \
-  { NULL, 0 }
+#define ABUF_INIT { NULL, 0 }
 
 
 ////////////////////////////////
 // prototypes for foward references
+// TODO: some of these need renames
+// TODO: and those not in tvi need to be moved
+//       to the appropriate header
+void initializeKeywordTables();
+void editorSelectSyntaxHighlight();
+int editorSyntaxToColor(int);
+void editorUpdateSyntax(erow *row);
 void editorSetStatusMessage(const char *fmt, ...);
 void editorRefreshScreen();
 char *editorPrompt(char *prompt, void (*callback)(char *, int));

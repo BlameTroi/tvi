@@ -23,6 +23,7 @@
 // clang-format on
 
 #include "tvi.h"
+#include "terminal.h"
 
 ////////////////////////////////////////////////////
 // terminal state and management
