@@ -23,6 +23,7 @@
 // clang-format on
 
 #include "tvi.h"
+#include "highlight.h"
 #include "terminal.h"
 
 ////////////////////////////////////////////////////

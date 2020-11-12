@@ -154,10 +154,6 @@ struct abuf {
 // TODO: some of these need renames
 // TODO: and those not in tvi need to be moved
 //       to the appropriate header
-void initializeKeywordTables();
-void editorSelectSyntaxHighlight();
-int editorSyntaxToColor(int);
-void editorUpdateSyntax(erow *row);
 void editorSetStatusMessage(const char *fmt, ...);
 void editorRefreshScreen();
 char *editorPrompt(char *prompt, void (*callback)(char *, int));

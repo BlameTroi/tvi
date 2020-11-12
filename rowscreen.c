@@ -22,6 +22,8 @@
 //
 
 #include "tvi.h"
+#include "highlight.h"
+
 #include "rowscreen.h"
 
 /////////////////////////////////////////////////////////////

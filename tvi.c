@@ -64,11 +64,9 @@
 
 #include "tvi.h"
 
-#include "terminal.h"
-#include "terminal.c"
 #include "highlight.h"
+#include "terminal.h"
 #include "rowscreen.h"
-#include "rowscreen.c"
 
 struct editorConfig E;
 
